@@ -1,0 +1,23 @@
+---
+- hosts: all
+  become: true
+
+  tasks:
+  - name: Wait for ssh as Azure takes time
+    wait_for:
+      port: 22
+      host: '{{ (ansible_ssh_host|default(ansible_host))|default(inventory_hostname) }}'
+      
+  - name: "Install nginx"
+    package:
+     state: present # required. Whether to install (C(present)), or remove (C(absent)) a package. Other states depend on the underlying package module, i.e C(latest).
+     name: nginx # required. Package name, or package specifier with version, like C(name-1.0).,Be aware that packages are not always named the same and this module will not 'translate' them per distro.
+     use: auto # not required. The required package manager module to use (yum, apt, etc). The default 'auto' will use existing facts or try to autodetect it.,You should only use this field if the automatic selection is not working for some reason.
+
+  - name: "Enable and start service"
+    service:
+        name: nginx # required. Name of the service.
+        use: auto 
+        enabled: True
+        state: restarted
+        

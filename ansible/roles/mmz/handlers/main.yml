@@ -1,0 +1,14 @@
+---
+# handlers file for mmz 
+
+- name: restart services
+  service:
+      name: "{{ item }}"
+      enabled: true
+      state: restarted
+  with_items:
+   - zookeeper
+   - mesos-master
+   - mesos-slave
+   - marathon
+   - haproxy

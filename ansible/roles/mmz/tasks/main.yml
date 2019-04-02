@@ -1,0 +1,118 @@
+---
+
+- name: Wait for ssh as Azure takes time
+  wait_for:
+    port: 22
+    host: '{{ (ansible_ssh_host|default(ansible_host))|default(inventory_hostname) }}'
+
+- name: Enable Mesos repo Apt key
+  apt_key:
+      keyserver: keyserver.ubuntu.com
+      id: E56151BF
+
+- name: Add apt repository
+  apt_repository:
+      repo: "deb http://repos.mesosphere.io/{{ansible_distribution | lower}} {{ ansible_distribution_release }} main" 
+      state: present 
+      update_cache: yes
+
+- name: Add Haproxy repo for 1.9 ( as default package 1.6 has compatiblity issues)
+  apt_repository:
+   repo: ppa:vbernat/haproxy-1.9
+   update_cache: yes
+
+
+- name: Install Mesos
+  package:
+      state: present
+      name: "{{ item }}"
+      use: auto
+  with_items:
+   - "{{ packages }}"
+
+- name: Create marathon config dir
+  file:
+      path: /etc/marathon/conf
+      recurse: yes
+      state: directory
+
+- name: Update openjre 8 as default java as 9 has bugs and incompatibility
+  alternatives:
+      name: java
+      path: /usr/lib/jvm/java-8-openjdk-amd64/bin/java
+
+### Below fixes for OpenJDK 9 is not valid anymore as we have switched to JDK8
+- name: Bug in openjdk pakcage
+  file:
+      src: /usr/lib/jvm/java-9-openjdk-amd64/lib 
+      dest: /usr/lib/jvm/java-9-openjdk-amd64/conf
+      state: link
+  ignore_errors: true
+     
+      
+- name: Config Templates for each service
+  template:
+      dest: "{{ item.dest }}"
+      src: "{{ item.src }}"
+  with_items:
+   - "{{ templates }}"
+  notify: restart services 
+
+- meta: flush_handlers
+
+- name: wait for MMZ cluster to be ready and running and form quorum
+  wait_for:
+      host: 127.0.0.1  # A resolvable hostname or IP address to wait for.
+      connect_timeout: 5  # Maximum number of seconds to wait for a connection to happen before closing and retrying.
+      delay: 0  # Number of seconds to wait before starting to poll.
+      sleep: 1  # Number of seconds to sleep between checks, before 2.3 this was hardcoded to 1 second.
+      timeout: 600  # Maximum number of seconds to wait for, when used with another condition it will force an error.,When used without other conditions it is equivalent of just sleeping.
+      port: 8080  # Port number to poll.
+  when: inventory_hostname == groups['all'][0]
+
+- name: Checkout Marathon LB (Patched)
+  git:
+   repo: "https://github.com/linuxmanju/marathon-lb.git"
+   dest: /marathon-lb
+
+- name: Deploy a Standard nginx and test
+  uri:
+   url: "http://localhost:8080/v2/apps"
+   method: POST 
+   return_content: yes 
+   HEADER_Content-Type: "application/json"
+   body: "{{ lookup('file','nginx_test.json')  }}"
+   body_format: json
+   status_code: 201,409
+  when: inventory_hostname == groups['all'][0]
+
+- name: Add a cron for periodic updates of HAproxy backend
+  cron:
+      job: export PATH="/usr/sbin:$PATH";/marathon-lb/marathon_lb.py --group '*' --marathon http://0:8080  --dont-bind-http-https  # The command to execute or, if env is set, the value of environment variable. The command should not contain line breaks. Required if state=present.
+      user: root  # The specific user whose crontab should be modified.
+      minute: "*/1"  # Minute when the job should run ( 0-59, *, */2, etc )
+      name: marathon-lb  # Description of a crontab entry or, if env is set, the name of environment variable. Required if state=absent. Note that if name is not set and state=present, then a new crontab entry will always be created, regardless of existing ones.
+      state: present  # choices: absent;present. Whether to ensure the job or environment variable is present or absent.
+
+- name: Wait for the testsuit to finish validate and exit.
+  wait_for:
+      host: 127.0.0.1
+      connect_timeout: 5  # Maximum number of seconds to wait for a connection to happen before closing and retrying.
+      delay: 5  # Number of seconds to wait before starting to poll.
+      sleep: 1  # Number of seconds to sleep between checks, before 2.3 this was hardcoded to 1 second.
+      timeout: 300  # Maximum number of seconds to wait for, when used with another condition it will force an error.,When used without other conditions it is equivalent of just sleeping.
+      port: 8181
+
+- name: Wait for Nginx backened and a successfull return code before killing the nginx deployment
+  shell: curl -sq 0:8181| grep "Welcome to nginx"
+  register: nginx_out
+  retries: 10
+  until: nginx_out.rc == 0 
+  delay: 10
+  changed_when: false
+
+- name: Delete the deployed nginx once testing is a success
+  uri: 
+    url: "http://localhost:8080/v2/apps/nginx"
+    method: DELETE
+  when: inventory_hostname == groups['all'][0]

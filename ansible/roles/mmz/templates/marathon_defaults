@@ -1,0 +1,2 @@
+MARATHON_MASTER=zk://{% for host in groups['all'] %}{{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}:2181{% if not loop.last %},{% endif %}{% endfor %}/mesos
+MARATHON_ZK=zk://{% for host in groups['all'] %}{{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}:2181{% if not loop.last %},{% endif %}{% endfor %}/marathon

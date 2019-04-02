@@ -1,0 +1,6 @@
+provisioner/terraform.tfstate
+provisioner/terraform.tfstate.backup
+provisioner/.terraform
+ansible/inventory.ip_list
+provisioner/.terraform
+provisioner/errored.tfstate
