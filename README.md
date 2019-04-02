@@ -1,5 +1,8 @@
 Azure provisioner for Mesos, Marathon and zookeeper Cluster setup
 =========
+Please read the entire Readme.md ( this file ) for usage and samples.
+---------
+
 
 What you get:
 
